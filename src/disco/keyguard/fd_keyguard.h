@@ -57,6 +57,22 @@ FD_PROTOTYPES_BEGIN
 #define FD_KEYGUARD_SIGN_TYPE_PUBKEY_CONCAT_ED25519 (2)  /* ed25519_sign(pubkey-data) */
 #define FD_KEYGUARD_SIGN_TYPE_CNT                   (3)  /* number of sign types */
 
+#define FD_KEYGUARD_ROLE_ALLNODES          (32)
+#define FD_KEYGUARD_PAYLOAD_LG_ALLNODES    (63)
+#define FD_KEYGUARD_PAYLOAD_ALLNODES       (1UL<<FD_KEYGUARD_PAYLOAD_LG_ALLNODES)
+#define FD_KEYGUARD_ALLNODES_HB_DOMAIN     "ALLNODES_HEARTBEAT_V1"
+#define FD_KEYGUARD_ALLNODES_HB_DOMAIN_SZ  (sizeof(FD_KEYGUARD_ALLNODES_HB_DOMAIN))
+#define FD_KEYGUARD_ALLNODES_HB_SZ         (FD_KEYGUARD_ALLNODES_HB_DOMAIN_SZ+32UL+8UL)
+
+FD_FN_PURE static inline int
+fd_keyguard_payload_matches_allnodes( uchar const * data,
+                                      ulong         sz,
+                                      int           sign_type ) {
+  if( sign_type!=FD_KEYGUARD_SIGN_TYPE_ED25519 ) return 0;
+  if( sz!=FD_KEYGUARD_ALLNODES_HB_SZ ) return 0;
+  return 0==memcmp( data, FD_KEYGUARD_ALLNODES_HB_DOMAIN, FD_KEYGUARD_ALLNODES_HB_DOMAIN_SZ );
+}
+
 /* Type confusion/ambiguity checks ************************************/
 
 /* fd_keyguard_payload_match returns a bitwise OR of

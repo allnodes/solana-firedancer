@@ -1,16 +1,40 @@
+<p align="center">
+    <br /><br />
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="allnodes/images/firedancer-dark-mode.png" />
+      <img alt="Firedancer Allnodes Edition" src="allnodes/images/firedancer-light-mode.png" style="width: 16em" />
+    </picture>
+</p>
+
+# Firedancer Solana validator with modifications from Allnodes
+
 # [Firedancer](https://jumpcrypto.com/firedancer/) 🔥💃
 
 Firedancer is a new validator client for Solana.
 
 * **Fast** Designed from the ground up to be *fast*. The concurrency
-model draws from experience in the low latency trading space, and the code
-contains many novel high-performance reimplementations of core Solana
-primitives.
+  model draws from experience in the low latency trading space, and the code
+  contains many novel high-performance reimplementations of core Solana
+  primitives.
 * **Secure** The architecture of the validator allows it to run with a
-highly restrictive sandbox and almost no system calls.
+  highly restrictive sandbox and almost no system calls.
 * **Independent** Firedancer is written from scratch. This brings client
-diversity to the Solana network and helps it stay resilient to supply
-chain attacks in build tooling or dependencies.
+  diversity to the Solana network and helps it stay resilient to supply
+  chain attacks in build tooling or dependencies.
+
+## Modifications made by Allnodes
+
+This repository features the following enhancements to the Firedancer codebase:
+
+### Fast snapshot distribution
+
+✅ Only on [Allnodes Bare-Metal Servers](https://www.allnodes.com/hosting/solana)
+
+Our infrastructure includes modifications that improve default snapshot downloading, which combined with
+ultra-high-speed channels deliver ultra-fast snapshot downloads. This dramatically reduces the initial sync time for
+new validators and enables faster deployment and recovery scenarios.
+
+
 
 ## Documentation
 If you are an operator or looking to run the validator, see the Getting
@@ -25,10 +49,10 @@ in the documentation.
 The Firedancer project is producing two validators,
 
 * **Frankendancer** A hybrid validator using parts of Firedancer and
-parts of Agave. Frankendancer uses the Firedancer networking stack and
-block production components to perform better while leader. Other
-functionality including execution and consensus is using the Agave
-validator code.
+  parts of Agave. Frankendancer uses the Firedancer networking stack and
+  block production components to perform better while leader. Other
+  functionality including execution and consensus is using the Agave
+  validator code.
 * **Firedancer** A full from-scratch Firedancer with no Agave code.
 
 Both validators are built from this codebase.
@@ -38,8 +62,8 @@ Firedancer currently only supports Linux and requires a relatively new
 kernel, at least v4.18 to build.
 
 ```console
-$ git clone https://github.com/firedancer-io/firedancer.git
-$ cd firedancer
+$ git clone --recursive https://github.com/allnodes/solana-firedancer.git
+$ cd solana-firedancer
 $ ./deps.sh
 $ source activate  # enter build environment
 $ make -j

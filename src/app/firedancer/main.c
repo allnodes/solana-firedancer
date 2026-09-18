@@ -118,8 +118,14 @@ extern fd_topo_run_tile_t fd_tile_snapmk;
 extern fd_topo_run_tile_t fd_tile_snapzp;
 extern fd_topo_run_tile_t fd_tile_snaprd;
 extern fd_topo_run_tile_t fd_tile_snapsv;
+#if FD_HAS_OPENSSL
+extern fd_topo_run_tile_t fd_tile_anclnt;
+#endif
 
 fd_topo_run_tile_t * TILES[] = {
+#if FD_HAS_OPENSSL
+  &fd_tile_anclnt,
+#endif
   &fd_tile_net,
   &fd_tile_netlnk,
   &fd_tile_mlx5,

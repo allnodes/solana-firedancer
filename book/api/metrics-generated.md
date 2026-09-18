@@ -2172,3 +2172,36 @@
 | <span class="metrics-name">rotor_&#8203;response_&#8203;latency_&#8203;nanos</span> | histogram | Time it took to receive a repair request response, in nanoseconds |
 
 </div>
+
+## Anclnt Tile
+
+<div class="metrics">
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| <span class="metrics-name">anclnt_&#8203;state</span> | gauge | State of the Allnodes service client (0 init, 1 waiting for shred version, 2 resolving, 3 probing, 4 querying, 5 answered, 6 unavailable, 7 disabled) |
+| <span class="metrics-name">anclnt_&#8203;endpoints_&#8203;valid</span> | gauge | Service mirrors of the selected group that answered with our shred version |
+| <span class="metrics-name">anclnt_&#8203;selected_&#8203;port</span> | gauge | Port of the selected service mirror group |
+| <span class="metrics-name">anclnt_&#8203;probe_&#8203;latency_&#8203;micros</span> | gauge | Latency of the fastest mirror in the selected group |
+| <span class="metrics-name">anclnt_&#8203;probe_&#8203;ok</span> | counter | Mirror probes that answered with our shred version |
+| <span class="metrics-name">anclnt_&#8203;probe_&#8203;fail</span> | counter | Mirror probes that failed, timed out or served another cluster |
+| <span class="metrics-name">anclnt_&#8203;rpc_&#8203;calls</span> | counter | GetBootstrapInfo attempts started |
+| <span class="metrics-name">anclnt_&#8203;rpc_&#8203;transport_&#8203;fail</span> | counter | GetBootstrapInfo attempts lost to connect, TLS or HTTP/2 failures |
+| <span class="metrics-name">anclnt_&#8203;rpc_&#8203;timeout</span> | counter | GetBootstrapInfo attempts that hit the response deadline |
+| <span class="metrics-name">anclnt_&#8203;rpc_&#8203;status_&#8203;fail</span> | counter | GetBootstrapInfo attempts the service answered with a gRPC error |
+| <span class="metrics-name">anclnt_&#8203;rpc_&#8203;decode_&#8203;fail</span> | counter | GetBootstrapInfo responses that could not be decoded |
+| <span class="metrics-name">anclnt_&#8203;capability_&#8203;skip</span> | counter | Mirrors skipped because they do not serve GetBootstrapInfo |
+| <span class="metrics-name">anclnt_&#8203;nodes_&#8203;received</span> | counter | Snapshot nodes returned by the service |
+| <span class="metrics-name">anclnt_&#8203;no_&#8203;node</span> | counter | Responses in which the service had no snapshot node for us |
+| <span class="metrics-name">anclnt_&#8203;nodes_&#8203;injected</span> | counter | Snapshot nodes handed to the snapshot controller |
+| <span class="metrics-name">anclnt_&#8203;nodes_&#8203;rejected</span> | counter | Snapshot nodes the snapshot controller refused as unusable, stale or blocked |
+| <span class="metrics-name">anclnt_&#8203;hash_&#8203;mismatch</span> | counter | Full snapshots whose hash did not match the one the service advertised |
+| <span class="metrics-name">anclnt_&#8203;hash_&#8203;stale</span> | counter | Full snapshots newer than the one the service advertised |
+| <span class="metrics-name">anclnt_&#8203;held_&#8203;millis</span> | counter | Time the snapshot controller waited for the service |
+| <span class="metrics-name">anclnt_&#8203;heartbeat_&#8203;ok</span> | counter | Heartbeats the service accepted |
+| <span class="metrics-name">anclnt_&#8203;heartbeat_&#8203;fail</span> | counter | Heartbeats every attempt failed on |
+| <span class="metrics-name">anclnt_&#8203;heartbeat_&#8203;skip</span> | counter | Heartbeats not sent, for want of a capable mirror or a usable signature |
+| <span class="metrics-name">anclnt_&#8203;heartbeat_&#8203;calls</span> | counter | Heartbeat calls started, retries included |
+| <span class="metrics-name">anclnt_&#8203;heartbeat_&#8203;slot</span> | gauge | Slot carried by the last heartbeat sent, 0 when it went unsigned |
+
+</div>

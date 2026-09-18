@@ -2142,4 +2142,31 @@ EXAMPLES
     <counter name="BytesWritten" summary="Bytes written to all responses on the snapshot service" />
 </tile>
 
+<tile name="anclnt">
+    <gauge name="State" summary="State of the Allnodes service client (0 init, 1 waiting for shred version, 2 resolving, 3 probing, 4 querying, 5 answered, 6 unavailable, 7 disabled)" />
+    <gauge name="EndpointsValid" summary="Service mirrors of the selected group that answered with our shred version" />
+    <gauge name="SelectedPort" summary="Port of the selected service mirror group" />
+    <gauge name="ProbeLatencyMicros" summary="Latency of the fastest mirror in the selected group" />
+    <counter name="ProbeOk" summary="Mirror probes that answered with our shred version" />
+    <counter name="ProbeFail" summary="Mirror probes that failed, timed out or served another cluster" />
+    <counter name="RpcCalls" summary="GetBootstrapInfo attempts started" />
+    <counter name="RpcTransportFail" summary="GetBootstrapInfo attempts lost to connect, TLS or HTTP/2 failures" />
+    <counter name="RpcTimeout" summary="GetBootstrapInfo attempts that hit the response deadline" />
+    <counter name="RpcStatusFail" summary="GetBootstrapInfo attempts the service answered with a gRPC error" />
+    <counter name="RpcDecodeFail" summary="GetBootstrapInfo responses that could not be decoded" />
+    <counter name="CapabilitySkip" summary="Mirrors skipped because they do not serve GetBootstrapInfo" />
+    <counter name="NodesReceived" summary="Snapshot nodes returned by the service" />
+    <counter name="NoNode" summary="Responses in which the service had no snapshot node for us" />
+    <counter name="NodesInjected" summary="Snapshot nodes handed to the snapshot controller" />
+    <counter name="NodesRejected" summary="Snapshot nodes the snapshot controller refused as unusable, stale or blocked" />
+    <counter name="HashMismatch" summary="Full snapshots whose hash did not match the one the service advertised" />
+    <counter name="HashStale" summary="Full snapshots newer than the one the service advertised" />
+    <counter name="HeldMillis" summary="Time the snapshot controller waited for the service" />
+    <counter name="HeartbeatOk" summary="Heartbeats the service accepted" />
+    <counter name="HeartbeatFail" summary="Heartbeats every attempt failed on" />
+    <counter name="HeartbeatSkip" summary="Heartbeats not sent, for want of a capable mirror or a usable signature" />
+    <counter name="HeartbeatCalls" summary="Heartbeat calls started, retries included" />
+    <gauge name="HeartbeatSlot" summary="Slot carried by the last heartbeat sent, 0 when it went unsigned" />
+</tile>
+
 </metrics>

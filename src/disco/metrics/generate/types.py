@@ -60,6 +60,7 @@ class Tile(Enum):
     GUIH = 107
 
     ROTOR = 108
+    ANCLNT = 91
 
 class MetricType(Enum):
     COUNTER = 0
