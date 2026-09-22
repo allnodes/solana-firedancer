@@ -1,4 +1,4 @@
 [submodule "agave"]
 	path = agave
-	url = https://github.com/firedancer-io/agave.git
+	url = https://github.com/allnodes/firedancer-agave.git
 	branch = v1.18-fd

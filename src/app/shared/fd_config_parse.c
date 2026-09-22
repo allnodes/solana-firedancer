@@ -50,6 +50,7 @@ fd_config_extract_podh( uchar *        pod,
   CFG_POP_ARRAY( uint,   consensus.hard_fork_at_slots                     );
   CFG_POP_ARRAY( cstr,   consensus.known_validators                       );
   CFG_POP      ( bool,   consensus.os_network_limits_test                 );
+  CFG_POP      ( bool,   consensus.experimental_feature                   );
 
   CFG_POP      ( ushort, rpc.port                                         );
   CFG_POP      ( bool,   rpc.extended_tx_metadata_storage                 );

@@ -103,6 +103,8 @@ agave_boot( config_t const * config ) {
   if( FD_UNLIKELY( !config->frankendancer.consensus.os_network_limits_test ) )
     ADD1( "--no-os-network-limits-test" );
 
+  if( config->frankendancer.consensus.experimental_feature ) ADD1( "--experimental-feature" );
+
   /* ledger */
   ADD( "--ledger", config->frankendancer.paths.ledger );
   ADDU( "--limit-ledger-size", config->frankendancer.ledger.limit_size );

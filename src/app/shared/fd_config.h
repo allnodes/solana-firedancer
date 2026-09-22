@@ -59,6 +59,7 @@ struct fd_configh {
     ulong  known_validators_cnt;
     char   known_validators[ 16 ][ 256 ];
     int    os_network_limits_test;
+    int    experimental_feature;
   } consensus;
 
   struct {
