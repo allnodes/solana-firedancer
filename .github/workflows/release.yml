@@ -1,0 +1,185 @@
+name: Release Build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_TOKEN: ${{ github.token }}
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write  # Required for creating releases
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG=${{ github.event.inputs.tag }}
+          else
+            TAG=${{ github.ref_name }}
+          fi
+          echo "tag=${TAG}" > $GITHUB_OUTPUT
+          echo "tag=${TAG}"
+
+      - name: Install dependencies
+        run: |
+          set -xe
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ca-certificates \
+            clang \
+            curl \
+            make \
+            cmake \
+            git \
+            git-lfs \
+            libclang-dev \
+            libudev-dev \
+            pkg-config \
+            protobuf-compiler \
+            zstd
+          ./deps.sh fetch
+          ./deps.sh check
+          ./deps.sh install
+
+      - name: Build frankendancer
+        run: MACHINE=linux_gcc_zen4 make fdctl solana
+        env:
+          ALLNODES_CLIENT_VERSION: ${{ steps.tag.outputs.tag }}
+
+      - name: Create release archive
+        id: archive
+        shell: bash
+        run: |
+          ARCHIVE_NAME="frankendancer-${{ steps.tag.outputs.tag }}.tar.gz"
+          ARCHIVE_PATH="./$ARCHIVE_NAME"
+          cd ./build/linux/gcc/zen4
+          tar -czf "../../../../$ARCHIVE_NAME" bin info
+          cd -
+          echo "Archive contents:"
+          tar -tzf "$ARCHIVE_NAME"
+          ARCHIVE_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
+          {
+            echo "archive-name=$ARCHIVE_NAME"
+            echo "archive-path=$ARCHIVE_PATH"
+            echo "archive-size=$ARCHIVE_SIZE"
+          } > $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: |
+            ## Release ${{ steps.tag.outputs.tag }}
+            
+            ### 📦 Binaries Included
+            - **Archive**: `${{ steps.archive.outputs.archive-name }}`
+            - **Archive Size**: ${{ steps.archive.outputs.archive-size }}
+            
+            ### 🚀 Installation
+            ```bash
+            # Download and extract
+            curl -OJL "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/${{ steps.archive.outputs.archive-name }}"
+            mkdir frankendancer
+            tar -xzf ${{ steps.archive.outputs.archive-name }} -C frankendancer
+            
+            # Binaries will be in the 'frankendancer/bin' directory
+            ls frankendancer/bin
+            ```
+            
+            ### 📋 Changes
+            - Auto-generated release from tag `${{ steps.tag.outputs.tag }}`
+            
+            ---
+            *Built from commit: ${{ github.sha }}*
+          files: ${{ steps.archive.outputs.archive-path }}
+          draft: false
+          prerelease: false
+          token: ${{ github.token }}
+
+      # Must be the LAST release-touching step in the job.
+      # A testnet release is a full (non-prerelease) release but must NOT hold the
+      # "Latest" badge. `--latest=false` cannot achieve this: it only un-pins, after
+      # which GitHub's auto-selection (date, then highest version) re-picks the testnet
+      # tag. The reliable lever is the opposite direction — positively pin the mainnet
+      # release with make_latest=true.
+      #
+      # Firedancer tags encode Agave as a 5-digit MAJOR*10000 + MINOR*100 + PATCH group:
+      #   v0.<fd_minor>.<agave5>[-allnodes]  (40100=Agave 4.1.0, 40003=4.0.3, 30114=3.1.14)
+      - name: Keep 'Latest' on the mainnet release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}   # same source softprops uses (correct for workflow_dispatch)
+        run: |
+          set -euo pipefail
+
+          # A mainnet release = Firedancer-format tag with Agave code < 40300 (Agave < 4.3.0)
+          is_mainnet_release() {
+            [[ "$1" =~ \.([0-9]{5})(-|$) ]] || return 1
+            local version="${BASH_REMATCH[1]}"
+            (( version < 40300 ))
+          }
+
+          # Highest full (non-prerelease, non-draft) mainnet release tag, or empty.
+          mainnet_latest() {
+            gh release list --repo "$REPO" --limit 1000 \
+                --json tagName,isPrerelease,isDraft \
+                --jq '.[] | select(.isPrerelease==false and .isDraft==false) | .tagName' \
+              | while IFS= read -r t; do is_mainnet_release "$t" && printf '%s\n' "$t"; done \
+              | sort -V | tail -n1
+          }
+          current_latest() {
+            gh release list --repo "$REPO" --limit 1000 --json tagName,isLatest \
+              --jq 'map(select(.isLatest) | .tagName) | .[0] // ""'
+          }
+          pin_latest() {
+            local i; for i in 1 2 3; do
+              gh release edit "$1" --repo "$REPO" --latest && return 0
+              echo "pin attempt $i failed; retrying..."; sleep 5
+            done; return 1
+          }
+
+          # A new mainnet release keeps the badge softprops just gave it; only act
+          # after publishing a testnet release.
+          if is_mainnet_release "$TAG"; then
+            echo "mainnet '$TAG' — leaving it as 'Latest'."; exit 0
+          fi
+
+          TARGET="$(mainnet_latest)"
+          if [[ -z "$TARGET" ]]; then
+            echo "::warning::no mainnet release exists to hold 'Latest'; '$TAG' stays latest."; exit 0
+          fi
+
+          echo "Pinning 'Latest' onto mainnet release: $TARGET"
+          pin_latest "$TARGET" || { echo "::error::failed to pin 'Latest' onto '$TARGET'"; exit 1; }
+
+          # Verify via the authoritative isLatest flag, polling for eventual consistency.
+          NOW=""
+          for i in 1 2 3 4 5 6; do
+            NOW="$(current_latest 2>/dev/null || true)"
+            [[ "$NOW" == "$TARGET" ]] && break
+            echo "verify $i: 'Latest' on '${NOW:-<none>}' (want '$TARGET'); waiting..."; sleep 5
+          done
+          if [[ "$NOW" == "$TAG" ]]; then
+            echo "::error::'Latest' still on testnet '$TAG' after pinning '$TARGET'"; exit 1
+          fi
+          echo "OK — '$TAG' is not latest; '${NOW:-<none>}' holds the badge."

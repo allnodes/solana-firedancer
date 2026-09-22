@@ -4,6 +4,37 @@
 
 OBJDIR:=$(BASEDIR)/$(BUILDDIR)
 
+# Some Local.mk rules invoke a build-time tool (e.g. fd_gzip_pack,
+# fd_zstd_pack) to generate assets *during* the build itself. Unlike the
+# final binaries, that tool runs on the build host right now, so it must
+# be compiled for the host's actual CPU -- not for MACHINE, which may
+# target a narrower/newer microarchitecture (e.g. zen4's AVX-512/GFNI)
+# than the host actually has, which would crash the tool with SIGILL
+# before it ever produces the asset. Building it via a nested `MACHINE=
+# native` invocation keeps the tool host-safe while everything else
+# still builds for the requested MACHINE.
+FD_NATIVE_TOOL_DIR:=$(BASEDIR)/native/$(notdir $(CC))/bin
+
+# In a native build FD_NATIVE_TOOL_DIR is $(OBJDIR)/bin itself: skip the
+# nested-make rules so they don't shadow the regular make-bin rules.
+ifneq ($(FD_NATIVE_TOOL_DIR),$(OBJDIR)/bin)
+
+# Pin CC/BUILDDIR/EXTRAS explicitly: command-line overrides of the outer
+# make leak into sub-makes via MAKEFLAGS, while CC set by a machine
+# config does not propagate at all; either way the nested build could
+# otherwise land in the wrong directory (or in the outer build's one).
+FD_NATIVE_TOOL_ARGS:=MACHINE=native CC=$(CC) BUILDDIR=native/$(notdir $(CC)) EXTRAS=
+
+$(FD_NATIVE_TOOL_DIR)/fd_gzip_pack:
+	$(Q)$(MAKE) $(FD_NATIVE_TOOL_ARGS) fd_gzip_pack
+
+# Order-only dep serializes the two nested makes: run concurrently they
+# would race on the shared native libs and config.mk.
+$(FD_NATIVE_TOOL_DIR)/fd_zstd_pack: | $(FD_NATIVE_TOOL_DIR)/fd_gzip_pack
+	$(Q)$(MAKE) $(FD_NATIVE_TOOL_ARGS) fd_zstd_pack
+
+endif
+
 # Grab all the Local.mk files in the source tree, save to a variable so that
 # other rules can depend on this list. We will include these files later on.
 # Don't use "-L" if source code directory structure has symlink loops.

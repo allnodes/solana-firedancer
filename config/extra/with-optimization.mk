@@ -6,4 +6,4 @@ else
 CPPFLAGS+=-O0 -ffp-contract=off -fno-math-errno
 endif
 
-RUST_PROFILE:=release-with-debug
+RUST_PROFILE:=release

@@ -11,16 +11,16 @@ $(call run-unit-test,test_gui_store)
 $(call make-unit-test,test_gui_hist_evict,test_gui_hist_evict,fd_disco fd_choreo fd_flamenco fd_waltz fd_tango fd_ballet fd_util)
 $(call run-unit-test,test_gui_hist_evict)
 
-src/disco/gui/dist_cmp/%.zst: src/disco/gui/dist/% | $(OBJDIR)/bin/fd_zstd_pack
+src/disco/gui/dist_cmp/%.zst: src/disco/gui/dist/% | $(FD_NATIVE_TOOL_DIR)/fd_zstd_pack
 	@echo -e "ZSTD\t$(notdir $@)"
 	$(Q)$(MKDIR) $(@D) && \
-$(OBJDIR)/bin/fd_zstd_pack 19 $< $@ && \
+$(FD_NATIVE_TOOL_DIR)/fd_zstd_pack 19 $< $@ && \
 $(TOUCH) $@
 
-src/disco/gui/dist_cmp/%.gz: src/disco/gui/dist/% | $(OBJDIR)/bin/fd_gzip_pack
+src/disco/gui/dist_cmp/%.gz: src/disco/gui/dist/% | $(FD_NATIVE_TOOL_DIR)/fd_gzip_pack
 	@echo -e "GZIP\t$(notdir $@)"
 	$(Q)$(MKDIR) $(@D) && \
-$(OBJDIR)/bin/fd_gzip_pack 9 $< $@ && \
+$(FD_NATIVE_TOOL_DIR)/fd_gzip_pack 9 $< $@ && \
 $(TOUCH) $@
 
 FD_GUI_FRONTEND_FILES := $(shell $(FIND) src/disco/gui/dist -type f)
