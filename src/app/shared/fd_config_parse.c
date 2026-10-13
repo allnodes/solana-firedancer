@@ -304,6 +304,8 @@ fd_config_extract_pod( uchar *       pod,
   CFG_POP      ( ulong,  tiles.rserve.shred_storage_limit_gib             );
 
   CFG_POP      ( bool,   tiles.tower.write_vote_history_file              );
+  CFG_POP      ( bool,   tiles.tower.mostly_confirmed_threshold           );
+  CFG_POP      ( cstr,   tiles.tower.mostly_confirmed_threshold_config    );
 
   CFG_POP      ( bool,   tiles.votor.write_vote_history_file              );
 
