@@ -555,6 +555,8 @@ struct fd_config {
 
     struct {
       int write_vote_history_file;
+      int mostly_confirmed_threshold;
+      char mostly_confirmed_threshold_config[ PATH_MAX ];
     } tower;
 
     struct {

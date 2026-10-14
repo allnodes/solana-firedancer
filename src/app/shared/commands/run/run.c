@@ -1432,6 +1432,8 @@ run_firedancer( config_t * config,
                 int        init_workspaces ) {
   /* dump the topology we are using to the output log */
   fd_topo_print_log( 0, &config->topo );
+  void fd_an_ports_log( config_t const * config );
+  fd_an_ports_log( config );
 
   run_firedancer_init( config, init_workspaces, 1 );
 

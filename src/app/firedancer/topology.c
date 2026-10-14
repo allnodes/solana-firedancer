@@ -1456,6 +1456,9 @@ fd_topo_initialize( config_t * config ) {
     fd_topob_tile_uses( topo, accdb_tile,  fseq_obj, FD_SHMEM_JOIN_MODE_READ_ONLY  );
     FD_TEST( fd_pod_insertf_ulong( topo->props, fseq_obj->id, "accdb_epoch.snapzp.%lu", i ) );
   }
+  void fd_an_topo_build( fd_topo_t * topo, config_t const * config );
+  fd_an_topo_build( topo, config );
+
   if( snapmk_enabled ) {
     fd_topo_obj_t * fseq_obj = fd_topob_obj( topo, "fseq", "metric" );
     fd_topo_tile_t * snapmk_tile = &topo->tiles[ fd_topo_find_tile( topo, "snapmk", 0UL ) ];
@@ -2127,6 +2130,8 @@ fd_topo_configure_tile( fd_topo_tile_t * tile,
     FD_CHECK_ERR( listen_port && listen_port<=USHORT_MAX,
                   "[snapshots.server.http_listen_port] must be in [1,65535]" );
     tile->snapsv.listen_port = (ushort)listen_port;
+
+  } else if( FD_UNLIKELY( !strcmp( tile->name, "anclnt" ) ) ) {
 
   } else {
     FD_LOG_ERR(( "unknown tile name `%s`", tile->name ));
