@@ -1,0 +1,411 @@
+name: Release Build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build"
+        required: true
+
+env:
+  # Release policy, read by the "Keep 'Latest' on the mainnet release" step below.
+  # A release is a mainnet release when its version, the tag v<VERSION>[-<suffix>]
+  # without "v" and the suffix, matches this regex; "Latest" goes to the highest
+  # mainnet release.  Must equal MAINNET_VERSION_REGEX in the project's publish
+  # config: publish refuses to tag otherwise.
+  MAINNET_VERSION_REGEX: '26\.09\.[0-9][0-9]?$'
+  # The machine config the fleet runs.  `make env` turns it into the build
+  # directory below, so no step has to spell that path out.
+  MACHINE: linux_gcc_zen4
+
+# Two releases published at once would interleave: one job lists the releases
+# while the other is still publishing, and the badge ends up on the wrong one.
+# A half-published release must not be cancelled either.
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-24.04
+    # Without one, GitHub allows six hours, and the concurrency group above
+    # would hold every later release behind a wedged build.
+    timeout-minutes: 60
+    permissions:
+      contents: write  # Required for creating releases
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # A dispatch builds the requested tag, not the branch it was started from.
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+          # No submodule takes part in the build: agave belongs to Frankendancer,
+          # and src/discof/allnodes/protos only documents the service's schema.
+          submodules: false
+
+      - name: Determine release tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+          echo "tag=${TAG}"
+
+          # Firedancer release tags are CalVer: v<YY>.<MM>.<PATCH>-allnodes, plus
+          # .<N> when a release is republished (e.g. v26.09.2-allnodes.1).
+          if [[ ! "$TAG" =~ ^v([1-9][0-9])\.([0-9]{2})\.(0|[1-9][0-9]*)-allnodes(\.[1-9][0-9]*)?$ ]]; then
+            echo "::error::release tag '${TAG}' is not a Firedancer release tag v<YY>.<MM>.<PATCH>-allnodes[.<N>] (e.g. v26.09.2-allnodes)"
+            exit 1
+          fi
+          TAG_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+
+          # The tag must name the version the checked-out source builds.
+          VERSION_MK=src/app/firedancer/version.mk
+          version_mk_field() {
+            sed -n "s/^${1}[[:space:]]*:=[[:space:]]*\([0-9][0-9]*\)[[:space:]]*\$/\1/p" "$VERSION_MK"
+          }
+          MAJOR="$(version_mk_field FD_VERSION_MAJOR)"
+          MINOR="$(version_mk_field FD_VERSION_MINOR)"
+          PATCH="$(version_mk_field FD_VERSION_PATCH)"
+          if [[ ! "$MAJOR" =~ ^[0-9]+$ || ! "$MINOR" =~ ^[0-9]+$ || ! "$PATCH" =~ ^[0-9]+$ ]]; then
+            echo "::error::cannot read FD_VERSION_MAJOR/MINOR/PATCH from ${VERSION_MK}"
+            exit 1
+          fi
+          # Rendered as src/util/fd_version.c and src/discof/allnodes/Local.mk do:
+          # two minor digits from major 26 on.
+          if (( MAJOR >= 26 )); then
+            MINOR="$(printf %02d "$MINOR")"
+          fi
+          SOURCE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          if [[ "$TAG_VERSION" != "$SOURCE_VERSION" ]]; then
+            echo "::error::release tag '${TAG}' is version ${TAG_VERSION}, but ${VERSION_MK} is version ${SOURCE_VERSION}"
+            exit 1
+          fi
+
+          # src/discof/allnodes/Local.mk uses ALLNODES_CLIENT_VERSION verbatim, so
+          # it carries the client name that its git describe fallback adds, read
+          # from the same file.
+          CLIENT_NAME_MK=src/discof/allnodes/Local.mk
+          CLIENT_NAME="$(sed -n 's/^FD_AN_CLIENT_NAME[[:space:]]*:=[[:space:]]*\([^[:space:]]*\)[[:space:]]*$/\1/p' "$CLIENT_NAME_MK")"
+          if [[ ! "$CLIENT_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::cannot read one FD_AN_CLIENT_NAME from ${CLIENT_NAME_MK}, got '${CLIENT_NAME}'"
+            exit 1
+          fi
+          echo "client-name=${CLIENT_NAME}"
+          CLIENT_VERSION="${CLIENT_NAME}/${TAG}"
+          echo "client-version=${CLIENT_VERSION}"
+
+          # github.sha is the dispatching branch's head on workflow_dispatch, not
+          # the tag that is built.
+          COMMIT="$(git rev-parse HEAD)"
+          {
+            echo "tag=${TAG}"
+            echo "client-name=${CLIENT_NAME}"
+            echo "client-version=${CLIENT_VERSION}"
+            echo "commit=${COMMIT}"
+          } >> "$GITHUB_OUTPUT"
+
+      # The fleet runs Zen 4, and nothing but this job knows it: if env.MACHINE
+      # moves, the build still succeeds, `make env` follows it into another
+      # directory, and the fleet quietly gets a binary without the AVX-512
+      # paths.  Caught here from the checkout alone, and again below against
+      # the tree that was actually built.
+      - name: Check the release targets the fleet's CPU
+        run: |
+          set -euo pipefail
+          FLEET_MACHINE=linux_gcc_zen4
+          echo "FLEET_MACHINE=${FLEET_MACHINE}" >> "$GITHUB_ENV"
+          if [[ "${MACHINE}" != "${FLEET_MACHINE}" ]]; then
+            echo "::error::MACHINE is '${MACHINE}', but the fleet runs '${FLEET_MACHINE}': raise FLEET_MACHINE here if the fleet moved to another CPU"
+            exit 1
+          fi
+          echo "building for ${FLEET_MACHINE}"
+
+      # Upstream runs the next two checks on pull requests.  We release from a
+      # tag and have no pull request CI, so this is the only place left for
+      # them; both need nothing but the checkout and fail in seconds.
+
+      # Nothing regenerates the committed src/**/generated/*_seccomp.h, so a
+      # policy edited without rerunning the generator ships a filter that does
+      # not match it, and the tile dies on SIGSYS the first time it makes the
+      # syscall the policy allows.
+      - name: Check generated seccomp filters
+        run: |
+          set -euo pipefail
+          make seccomp-policies
+          CHANGED="$(git status --porcelain -- '*_seccomp.h')"
+          if [[ -n "$CHANGED" ]]; then
+            echo "::error::generated seccomp filters do not match their .seccomppolicy sources: run 'make seccomp-policies' and commit the regenerated headers"
+            echo "$CHANGED"
+            git --no-pager diff --text -- '*_seccomp.h'
+            exit 1
+          fi
+          echo "seccomp filters match their .seccomppolicy sources"
+
+      # The same for the metrics, which our patch also extends.  .gitattributes
+      # marks the generated files binary, so a rebase resolves them by hand, and
+      # stale output compiles and then reports another tile's counters.  The rm
+      # catches a file left behind for a tile metrics.xml no longer defines.
+      # Only the metrics part of upstream's check runs here: the events
+      # generator is the only one that would need a package from the network.
+      - name: Check generated metrics
+        run: |
+          set -euo pipefail
+          rm -f src/disco/metrics/generated/fd_metrics_*
+          make -C src/disco/metrics metrics
+          CHANGED="$(git status --porcelain -- src/disco/metrics/generated book/api/metrics-generated.md)"
+          if [[ -n "$CHANGED" ]]; then
+            echo "::error::generated metrics are out of date: run 'make -C src/disco/metrics metrics' and commit src/disco/metrics/generated and book/api/metrics-generated.md"
+            echo "$CHANGED"
+            git --no-pager diff --text --stat -- src/disco/metrics/generated book/api/metrics-generated.md
+            exit 1
+          fi
+          echo "generated metrics match src/disco/metrics/metrics.xml"
+
+      - name: Install dependencies
+        env:
+          FD_AUTO_INSTALL_PACKAGES: '1'
+        run: |
+          set -xeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ca-certificates \
+            curl \
+            diffutils \
+            make \
+            cmake \
+            git \
+            libclang-dev \
+            libudev-dev \
+            pkg-config \
+            protobuf-compiler
+          ./deps.sh fetch
+          ./deps.sh check
+          ./deps.sh install
+
+      # OpenSSL is optional to the build: without it config/extra/with-openssl.mk
+      # only warns, and the Allnodes client tile is silently left out.
+      - name: Check OpenSSL
+        run: |
+          if [[ ! -f opt/lib/libssl.a ]]; then
+            echo "::error::opt/lib/libssl.a is missing: OpenSSL did not install, and firedancer would be built without the Allnodes client"
+            exit 1
+          fi
+
+      # Upstream's only CBMC proof is the one that no two keyguard payload types
+      # accept the same bytes, and our patch adds a type: an overlap would make
+      # the sign tile refuse our requests or that role's own traffic, and no
+      # test here would see it.  The proof takes about ten seconds.
+      #
+      # Ubuntu's own cbmc rejects the --c17 the proof rule passes, so this
+      # installs the upstream build, pinned by checksum: the job publishes
+      # releases, and nothing unverified belongs in it.
+      - name: Verify the keyguard proofs
+        env:
+          CBMC_VERSION: '6.11.0'
+          CBMC_SHA256: 'b3721aa541038384d7801ea3aeabbcddc3e8845ac8f1cbff637cf8dec7481ac8'
+        run: |
+          set -euo pipefail
+          DEB="ubuntu-24.04-cbmc-${CBMC_VERSION}-Linux.deb"
+          curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 \
+            -o "/tmp/${DEB}" \
+            "https://github.com/diffblue/cbmc/releases/download/cbmc-${CBMC_VERSION}/${DEB}"
+          echo "${CBMC_SHA256}  /tmp/${DEB}" | sha256sum -c -
+          sudo apt-get install -y "/tmp/${DEB}"
+          cbmc --version
+          if ! make -j proof; then
+            echo "::error::the CBMC keyguard proof failed: a payload matcher in src/disco/keyguard accepts bytes another payload type also accepts, or the FD_KEYGUARD_ROLE_ALLNODES case in fd_keyguard_authorize.c misbehaves"
+            exit 1
+          fi
+
+      - name: Build firedancer
+        env:
+          ALLNODES_CLIENT_VERSION: ${{ steps.tag.outputs.client-version }}
+        run: |
+          set -euo pipefail
+          # The build directory follows MACHINE; ask make instead of guessing.
+          eval "$(make env | sed 's/^/export /')"
+          echo "OBJDIR=${OBJDIR}" >> "$GITHUB_ENV"
+          make -j"$(nproc)" firedancer
+
+      - name: Verify the Allnodes client in firedancer
+        env:
+          ALLNODES_CLIENT_VERSION: ${{ steps.tag.outputs.client-version }}
+        run: |
+          set -euo pipefail
+          # The version is compiled in as a C string: match it together with its
+          # terminating NUL, so that a longer version does not count.
+          BINARY="${OBJDIR}/bin/firedancer"
+          if ! LC_ALL=C grep -aqP -- '\Q'"${ALLNODES_CLIENT_VERSION}"'\E\x00' "$BINARY"; then
+            echo "::error::${BINARY} does not carry the Allnodes client version '${ALLNODES_CLIENT_VERSION}'"
+            exit 1
+          fi
+          echo "${BINARY} carries the Allnodes client version '${ALLNODES_CLIENT_VERSION}'"
+
+      # info records the MACHINE the tree was built with and ships inside the
+      # archive, so this says the same thing about what we publish that the
+      # step above said about the job.
+      - name: Check the built tree targets the fleet's CPU
+        run: |
+          set -euo pipefail
+          BUILT_MACHINE="$(sed -n 's/^[[:space:]]*#[[:space:]]*machine[[:space:]]*//p' "${OBJDIR}/info" | head -n1 | tr -d '[:space:]')"
+          if [[ "$BUILT_MACHINE" != "$FLEET_MACHINE" ]]; then
+            echo "::error::${OBJDIR}/info says the tree was built for MACHINE='${BUILT_MACHINE}', not '${FLEET_MACHINE}'"
+            exit 1
+          fi
+          echo "built for ${BUILT_MACHINE}"
+
+      # Upstream's own scan.  Consensus code must match Agave bit for bit, and a
+      # fused multiply-add rounds once where Agave rounds twice.  The objects are
+      # upstream's, but this is the only build of them at -march=znver4 with the
+      # runner's compiler, so a contraction there is ours to catch.
+      - name: Check consensus objects for FP FMA
+        run: |
+          set -euo pipefail
+          contrib/test/check_fp_fma.sh \
+            || { echo "::error::a floating-point FMA reached a consensus object built with MACHINE=${MACHINE}; see contrib/test/check_fp_fma.sh"; exit 1; }
+
+      - name: Create release archive
+        id: archive
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          CLIENT_NAME: ${{ steps.tag.outputs.client-name }}
+        run: |
+          set -euo pipefail
+          ARCHIVE_NAME="${CLIENT_NAME}-${TAG}.tar.gz"
+          ARCHIVE_PATH="./${ARCHIVE_NAME}"
+          tar -czf "$ARCHIVE_PATH" -C "$OBJDIR" bin/firedancer info
+          echo "Archive contents:"
+          tar -tzf "$ARCHIVE_PATH"
+          ARCHIVE_SIZE="$(du -h "$ARCHIVE_PATH" | cut -f1)"
+          {
+            echo "archive-name=${ARCHIVE_NAME}"
+            echo "archive-path=${ARCHIVE_PATH}"
+            echo "archive-size=${ARCHIVE_SIZE}"
+          } >> "$GITHUB_OUTPUT"
+
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: |
+            ## Release ${{ steps.tag.outputs.tag }}
+
+            ### 📦 Binaries Included
+            - **Archive**: `${{ steps.archive.outputs.archive-name }}`
+            - **Archive Size**: ${{ steps.archive.outputs.archive-size }}
+
+            ### 🚀 Installation
+            ```bash
+            # Download and extract
+            curl -OJL "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/${{ steps.archive.outputs.archive-name }}"
+            mkdir firedancer
+            tar -xzf ${{ steps.archive.outputs.archive-name }} -C firedancer
+
+            # Binaries will be in the 'firedancer/bin' directory
+            ls firedancer/bin
+            ```
+
+            ### 📋 Changes
+            - Auto-generated release from tag `${{ steps.tag.outputs.tag }}`
+
+            ---
+            *Built from commit: ${{ steps.tag.outputs.commit }}*
+          files: ${{ steps.archive.outputs.archive-path }}
+          draft: false
+          prerelease: false
+          # The step below pins "Latest".
+          make_latest: false
+          token: ${{ github.token }}
+
+      # Must be the LAST release-touching step in the job.  `--latest=false` does
+      # not keep a release from holding "Latest": un-pinning hands the choice back
+      # to GitHub, which picks the newest release again.  So the badge is pinned
+      # onto the highest full mainnet release by `sort -V`, whichever this tag is.
+      - name: Keep 'Latest' on the mainnet release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}   # same source softprops uses (correct for workflow_dispatch)
+        run: |
+          set -euo pipefail
+
+          # An invalid regex makes =~ return 2, which every test below reads as testnet.
+          RC=0; [[ "" =~ $MAINNET_VERSION_REGEX ]] || RC=$?
+          if [[ -z "$MAINNET_VERSION_REGEX" || "$RC" == 2 ]]; then
+            echo "::error::MAINNET_VERSION_REGEX is not a valid regex: '${MAINNET_VERSION_REGEX}'"; exit 1
+          fi
+
+          # Release tags are v<VERSION>[-<suffix>]; the regex matches VERSION.
+          is_mainnet_release() {
+            local version="${1#v}"
+            [[ "${version%%-*}" =~ $MAINNET_VERSION_REGEX ]]
+          }
+
+          # Highest full (non-prerelease, non-draft) mainnet release tag, or empty.
+          # TAG is listed explicitly: the release list may not show it yet.
+          # The filter is an `if`, not `&&`: under pipefail a testnet tag listed last
+          # would otherwise fail the whole pipeline and abort the step.
+          mainnet_latest() {
+            { gh release list --repo "$REPO" --limit 1000 \
+                  --json tagName,isPrerelease,isDraft \
+                  --jq '.[] | select(.isPrerelease==false and .isDraft==false) | .tagName'
+              printf '%s\n' "$TAG"; } \
+              | while IFS= read -r t; do if is_mainnet_release "$t"; then printf '%s\n' "$t"; fi; done \
+              | sort -V | tail -n1
+          }
+          current_latest() {
+            gh release list --repo "$REPO" --limit 1000 --json tagName,isLatest \
+              --jq 'map(select(.isLatest) | .tagName) | .[0] // ""'
+          }
+          pin_latest() {
+            local i; for i in 1 2 3; do
+              gh release edit "$1" --repo "$REPO" --latest && return 0
+              echo "pin attempt $i failed; retrying..."; sleep 5
+            done; return 1
+          }
+
+          if is_mainnet_release "$TAG"; then
+            echo "'$TAG' is a mainnet release"
+          else
+            echo "'$TAG' is a testnet release"
+          fi
+
+          TARGET="$(mainnet_latest)"
+          if [[ -z "$TARGET" ]]; then
+            echo "::warning::no full mainnet release exists to hold 'Latest'; leaving it where it is."; exit 0
+          fi
+
+          echo "Pinning 'Latest' onto: $TARGET"
+          pin_latest "$TARGET" || { echo "::error::failed to pin 'Latest' onto '$TARGET'"; exit 1; }
+
+          # Verify via the authoritative isLatest flag, polling for eventual consistency.
+          NOW=""
+          for i in 1 2 3 4 5 6; do
+            NOW="$(current_latest 2>/dev/null || true)"
+            [[ "$NOW" == "$TARGET" ]] && break
+            echo "verify $i: 'Latest' on '${NOW:-<none>}' (want '$TARGET'); waiting..."; sleep 5
+          done
+          if [[ "$NOW" != "$TARGET" ]]; then
+            echo "::error::'Latest' is on '${NOW:-<none>}' after pinning '$TARGET'"; exit 1
+          fi
+          echo "OK — '$TARGET' holds 'Latest'."
