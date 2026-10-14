@@ -11,7 +11,7 @@
    or knowingly skipped) before the constant is bumped.  String keys of
    the user's own file are separately forced through the classification
    lists below. */
-FD_STATIC_ASSERT( sizeof(fd_config_t)==22964152UL, update_fd_config_to_json_for_the_layout_change );
+FD_STATIC_ASSERT( sizeof(fd_config_t)==22968256UL, update_fd_config_to_json_for_the_layout_change );
 
 #define REDACTED "[redacted]"
 
@@ -112,6 +112,7 @@ static char const * const jw_redacted_keys[] = {
   "paths.accounts",
   "paths.shredb",
   "paths.guidb",
+  "tiles.tower.mostly_confirmed_threshold_config",
   "log.path",
   "gossip.host",
   "snapshots.sources.servers",

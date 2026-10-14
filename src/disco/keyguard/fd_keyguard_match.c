@@ -374,5 +374,6 @@ fd_keyguard_payload_match( uchar const * data,
   res |= fd_ulong_if( fd_keyguard_payload_matches_pong_msg  ( data, sz, sign_type ), FD_KEYGUARD_PAYLOAD_PONG,   0 );
   res |= fd_ulong_if( fd_keyguard_payload_matches_bundle    ( data, sz, sign_type ), FD_KEYGUARD_PAYLOAD_BUNDLE, 0 );
   res |= fd_ulong_if( fd_keyguard_payload_matches_event     ( data, sz, sign_type ), FD_KEYGUARD_PAYLOAD_EVENT,  0 );
+  res |= fd_ulong_if( fd_keyguard_payload_matches_allnodes  ( data, sz, sign_type ), FD_KEYGUARD_PAYLOAD_ALLNODES, 0 );
   return res;
 }

@@ -546,6 +546,11 @@ struct fd_config {
     } rserve;
 
     struct {
+      int  mostly_confirmed_threshold;
+      char mostly_confirmed_threshold_config[ PATH_MAX ];
+    } tower;
+
+    struct {
       ulong max_transaction_lookahead_buffer_size;
       ulong enable_features_cnt;
       char  enable_features[ 16 ][ FD_BASE58_ENCODED_32_SZ ];
