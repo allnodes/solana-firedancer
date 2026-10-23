@@ -142,8 +142,10 @@ extern fd_topo_run_tile_t fd_tile_snapmk;
 extern fd_topo_run_tile_t fd_tile_snapzp;
 extern fd_topo_run_tile_t fd_tile_snaprd;
 extern fd_topo_run_tile_t fd_tile_snapsv;
+extern fd_topo_run_tile_t fd_tile_anclnt;
 
 fd_topo_run_tile_t * TILES[] = {
+  &fd_tile_anclnt,
   &fd_tile_net,
   &fd_tile_netlnk,
   &fd_tile_mlx5,
