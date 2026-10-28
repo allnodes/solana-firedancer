@@ -445,6 +445,8 @@ struct fd_tower_blk {
   fd_hash_t confirmed_block_id; /* the block_id that was duplicate confirmed */
   int       leader;             /* whether this slot was our own leader slot */
   int       propagated;         /* whether this slot has been propagation confirmed (1/3 stake) */
+  uchar     mostly_confirmed;
+  uchar     replay_confirmed;
   ulong     prev_leader_slot;   /* previous slot in which we were leader as of this slot (inclusive) */
 };
 typedef struct fd_tower_blk fd_tower_blk_t;

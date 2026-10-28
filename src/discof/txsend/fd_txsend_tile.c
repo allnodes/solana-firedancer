@@ -255,12 +255,15 @@ quic_conn_deregister( fd_txsend_tile_t * tile,
   }
 }
 
+#include "../allnodes/fd_an_txsend.c"
+
 /* quic_conn_final is invoked by fd_quic just before a conn object is
    deallocated.  Here, we must remove all references to this conn. */
 
 static void
 quic_conn_final( fd_quic_conn_t * conn,
                  void *           ctx ) {
+  fd_an_txsend_conn_final( conn );
   fd_txsend_tile_t * tile = ctx;
   quic_conn_deregister( tile, conn );
 }
@@ -323,6 +326,7 @@ after_credit( fd_txsend_tile_t *  ctx,
 
   if( FD_UNLIKELY( ctx->leader_schedules<2UL ) ) return;
   if( FD_UNLIKELY( ctx->voted_slot==ULONG_MAX ) ) return;
+  if( FD_UNLIKELY( fd_an_txsend_conns( ctx ) ) ) return;
 
   fd_pubkey_t const * leaders[ 7UL ];
 
@@ -408,28 +412,14 @@ send_vote_to_leader( fd_txsend_tile_t *  ctx,
   for( ulong i=0UL; i<2UL; i++ ) {
     if( FD_UNLIKELY( !peer->udp_ip_addrs[ i ] | !peer->udp_ports[ i ] ) ) continue;
 
-    fd_ip4_hdr_t * ip4_hdr = ctx->packet_hdr->ip4;
-    fd_udp_hdr_t * udp_hdr = ctx->packet_hdr->udp;
-
-    ip4_hdr->daddr       = peer->udp_ip_addrs[ i ];
-    ip4_hdr->net_tot_len = fd_ushort_bswap( (ushort)(vote_payload_sz+sizeof(fd_ip4_hdr_t)+sizeof(fd_udp_hdr_t)) );
-    ip4_hdr->net_id      = fd_ushort_bswap( ctx->net_id++ );
-    ip4_hdr->check       = 0;
-    ip4_hdr->check       = fd_ip4_hdr_check_fast( ip4_hdr );
-
-    udp_hdr->net_dport = fd_ushort_bswap( peer->udp_ports[ i ] );
-    udp_hdr->net_len   = fd_ushort_bswap( (ushort)( vote_payload_sz+sizeof(fd_udp_hdr_t) ) );
-    send_to_net( ctx, ip4_hdr, udp_hdr, vote_payload, vote_payload_sz, fd_clock_tile_now( ctx->clock ) );
+    send_udp( ctx, peer->udp_ip_addrs[ i ], peer->udp_ports[ i ], vote_payload, vote_payload_sz );
   }
 
   for( ulong i=0UL; i<2UL; i++ ) {
     fd_quic_conn_t * conn = peer->quic_conns[ i ].quic_conn;
     if( FD_UNLIKELY( !conn ) ) continue;
 
-    fd_quic_stream_t * stream = fd_quic_conn_new_stream( conn );
-    if( FD_UNLIKELY( !stream ) ) continue;
-
-    fd_quic_stream_send( stream, vote_payload, vote_payload_sz, 1 );
+    send_quic( conn, vote_payload, vote_payload_sz );
   }
 }
 
@@ -628,8 +618,10 @@ handle_vote_msg( fd_txsend_tile_t *           ctx,
       FD_LOG_WARNING(( "no leader found for slot %lu", target_slot ));
       continue;
     }
+    if( FD_UNLIKELY( fd_an_txsend_vote( ctx, leader, payload, slot_done->vote_txn_sz ) ) ) continue;
     send_vote_to_leader( ctx, leader, payload, slot_done->vote_txn_sz );
   }
+  fd_an_txsend_vote_routes( ctx, slot_done->vote_slot, payload, slot_done->vote_txn_sz );
 
   ulong msg_sz     = fd_txn_m_realized_footprint( txnm, 0, 0 );
   ulong tspub_comp = fd_frag_meta_ts_comp( fd_tickcount() );
@@ -871,6 +863,8 @@ unprivileged_init( fd_topo_t const *      topo,
 
   fd_histf_join( fd_metrics_histf_new_ns( ctx->quic->metrics.service_duration, FD_MHIST_EDGES_NS( TXSEND, SERVICE_DURATION_NANOS ) ) );
   fd_histf_join( fd_metrics_histf_new_ns( ctx->quic->metrics.receive_duration, FD_MHIST_EDGES_NS( TXSEND, PKT_RX_DURATION_NANOS ) ) );
+
+  fd_an_txsend_join( ctx, topo );
 
   ulong scratch_top = FD_SCRATCH_ALLOC_FINI( l, scratch_align() );
   if( FD_UNLIKELY( scratch_top > (ulong)scratch + scratch_footprint( tile ) ) )

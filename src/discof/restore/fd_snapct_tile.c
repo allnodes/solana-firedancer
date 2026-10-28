@@ -917,12 +917,15 @@ next_deadline( fd_snapct_tile_t * ctx ) {
   return fd_clock_tile_wallclock_to_tickcount( ctx->clock, next );
 }
 
+#include "../allnodes/fd_an_snapct.c"
+
 static void
 after_credit( fd_snapct_tile_t *  ctx,
               fd_stem_context_t * stem,
               int *               opt_poll_in FD_PARAM_UNUSED,
               int *               charge_busy FD_PARAM_UNUSED ) {
   long now = fd_clock_tile_now( ctx->clock );
+  fd_an_snapct_progress( ctx, now );
 
   int fired = fd_fseq_query( ctx->waker_fseq )==1UL;
   if( FD_UNLIKELY( fired || now>=ctx->io_due_nanos ) ) {
@@ -1037,6 +1040,7 @@ after_credit( fd_snapct_tile_t *  ctx,
 
     /* ============================================================== */
     case FD_SNAPCT_STATE_WAITING_FOR_PEERS: {
+      if( FD_UNLIKELY( fd_an_snapct_try_start( ctx, stem, now ) ) ) break;
       if( FD_UNLIKELY( now>ctx->deadline_nanos ) ) FD_LOG_ERR(( "timed out waiting for peers." ));
 
       /* Existence gate only at this point, so no floor. */
@@ -1950,6 +1954,8 @@ snapld_frag( fd_snapct_tile_t *  ctx,
       if( full ) fd_cstr_ncpy( ctx->http_full_snapshot_name, meta->resolved_name, PATH_MAX );
       else       fd_cstr_ncpy( ctx->http_incr_snapshot_name, meta->resolved_name, PATH_MAX );
 
+      fd_an_snapct_meta( ctx, meta, full );
+
       if( FD_LIKELY( !!ctx->out_gui.mem ) ) {
         char snapshot_path[ PATH_MAX+30UL ]; /* 30 is fd_cstr_nlen( "https://255.255.255.255:65536/", ULONG_MAX ) */
         FD_TEST( fd_cstr_printf_check( snapshot_path, sizeof(snapshot_path), NULL, "http://" FD_IP4_ADDR_FMT ":%hu/%s",
@@ -2523,6 +2529,8 @@ unprivileged_init( fd_topo_t const *      topo,
   ctx->out_ld  = out1( topo, tile, "snapct_ld"   );
   ctx->out_gui = out1( topo, tile, "snapct_gui"  );
   ctx->out_rp  = out1( topo, tile, "snapct_repr" );
+
+  fd_an_snapct_join( ctx, topo, tile );
 }
 
 /* after_credit can result in as many as 5 stem publishes in some code
