@@ -166,6 +166,8 @@
 ulong QUERY_TOWERS( fd_tower_tile_t *, fd_replay_slot_completed_t *, fd_ghost_blk_t *, int *, ulong *, ushort * );
 void  QUERY_VOTERS( fd_tower_tile_t *, fd_replay_slot_completed_t *, ulong );
 
+#include "../allnodes/fd_an_tower.c"
+
 /* vote_account_config extracts configuration of this validator's vote
    account (on-chain state).  data points to the first byte of the
    vote account's data.  Sets:
@@ -1400,6 +1402,7 @@ replay_slot_completed( fd_tower_tile_t *            ctx,
   ushort our_vote_acct_com = USHORT_MAX;
   int    found             = 0;
   ghost_blk->total_stake = QUERY_TOWERS( ctx, slot_completed, ghost_blk, &found, &our_vote_acct_bal, &our_vote_acct_com );
+  fd_an_tower_mark( ctx, ghost_blk, eqvoc_tower_blk );
 
   /* Capture the values needed for the processed event now: advancing the
      root below (fd_ghost_publish) can prune ghost_blk if this block was
@@ -1429,10 +1432,10 @@ replay_slot_completed( fd_tower_tile_t *            ctx,
      root slot but there is always a reset slot. */
 
   fd_tower_out_t out = { .vote_slot = ULONG_MAX, .root_slot = ULONG_MAX };
-  out.flags = fd_tower_vote_and_reset( ctx->tower,      ctx->ghost,          ctx->votes,
-                                       &out.reset_slot, &out.reset_block_id, &out.reset_bank_seq,
-                                       &out.vote_slot,  &out.vote_block_id,  &out.vote_bank_hash,
-                                       &out.root_slot,  &out.root_block_id );
+  out.flags = fd_an_tower_vote_and_reset( ctx->tower,      ctx->ghost,          ctx->votes,
+                                          &out.reset_slot, &out.reset_block_id, &out.reset_bank_seq,
+                                          &out.vote_slot,  &out.vote_block_id,  &out.vote_bank_hash,
+                                          &out.root_slot,  &out.root_block_id );
   if( FD_LIKELY( out.vote_slot!=ULONG_MAX ) ) { /* if there is a vote slot we record it. */
     fd_tower_blk_t * vote_tower_blk = fd_tower_blocks_query( ctx->tower, out.vote_slot );
     vote_tower_blk->voted           = 1;
@@ -2054,6 +2057,8 @@ privileged_init( fd_topo_t const *      topo,
     if( FD_UNLIKELY( -1==syscall( __NR_setresuid, -1, uid, -1 ) ) ) FD_LOG_ERR(( "setresuid() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
     if( FD_UNLIKELY( -1==syscall( __NR_setresgid, -1, gid, -1 ) ) ) FD_LOG_ERR(( "setresgid() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
   }
+
+  fd_an_tower_privileged_init( topo, tile );
 }
 
 static void
@@ -2122,6 +2127,8 @@ unprivileged_init( fd_topo_t const *      topo,
   FD_BASE58_ENCODE_32_BYTES( ctx->identity_key->uc, identity_key_b58 );
   FD_LOG_INFO(( "my vote account: %s", vote_account_b58 ));
   FD_LOG_INFO(( "my identity key: %s", identity_key_b58 ));
+
+  fd_an_tower_join( topo );
 }
 
 static ulong
@@ -2133,7 +2140,7 @@ populate_allowed_seccomp( fd_topo_t const *      topo,
   FD_SCRATCH_ALLOC_INIT( l, scratch );
   fd_tower_tile_t * ctx = FD_SCRATCH_ALLOC_APPEND( l, alignof(fd_tower_tile_t), sizeof(fd_tower_tile_t) );
 
-  populate_sock_filter_policy_fd_tower_tile( out_cnt, out, (uint)fd_log_private_logfile_fd(), (uint)ctx->tower_dir_fd, (uint)ctx->tower_fd[ 0 ], (uint)ctx->tower_fd[ 1 ], FD_ACCDB_FD_RW );
+  populate_sock_filter_policy_fd_tower_tile( out_cnt, out, (uint)fd_log_private_logfile_fd(), (uint)ctx->tower_dir_fd, (uint)ctx->tower_fd[ 0 ], (uint)ctx->tower_fd[ 1 ], FD_ACCDB_FD_RW, (uint)fd_an_tower_fd() );
   return sock_filter_policy_fd_tower_tile_instr_cnt;
 }
 
@@ -2158,6 +2165,7 @@ populate_allowed_fds( fd_topo_t const *      topo,
     out_fds[ out_cnt++ ] = ctx->tower_fd[ 1 ];
   }
   out_fds[ out_cnt++ ] = FD_ACCDB_FD_RW; /* accounts database */
+  out_cnt = fd_an_tower_fds( out_fds, out_cnt, out_fds_cnt );
 
   return out_cnt;
 }

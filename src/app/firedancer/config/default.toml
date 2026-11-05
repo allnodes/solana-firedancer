@@ -1836,6 +1836,22 @@ telemetry = true
     [tiles.tower]
         write_vote_history_file = true
 
+        # Voting mod, also known as the "mostly confirmed threshold"
+        # voting patch.  It is enabled by default and comes with a
+        # predefined configuration which should work for most users.
+        # Set to false to use the default voting behavior.
+        mostly_confirmed_threshold = true
+
+        # Path to the voting mod configuration file.  If empty, the
+        # file is `mostly_confirmed_threshold` in the directory the
+        # validator is started from, created with the default values
+        # if it does not exist.  A file given here must exist.  The
+        # file is checked for changes once a minute.  Edit it in place,
+        # for example `echo '0.45 4 0 24' > mostly_confirmed_threshold`:
+        # a replaced or deleted file is not read again until restart.
+        # Must be empty if mostly_confirmed_threshold is false.
+        mostly_confirmed_threshold_config = ""
+
     # The txsend tile is responsible for sending transactions out to
     # the network over QUIC.  In the default configuration, this is just
     # used to send votes that our validator produces.

@@ -10,7 +10,7 @@
 #              tiles may need to pull accounts into the cache from disk,
 #              or purge out of cache to the disk to make forward
 #              progress.
-uint logfile_fd, uint dir_fd, uint tower_fd_0, uint tower_fd_1, uint accounts_fd
+uint logfile_fd, uint dir_fd, uint tower_fd_0, uint tower_fd_1, uint accounts_fd, uint vote_cfg_fd
 
 # logging: all log messages are written to a file and/or pipe
 #
@@ -67,6 +67,8 @@ ftruncate: (or (eq (arg 0) tower_fd_0)
 #
 # arg 0 is the file descriptor to read from
 preadv2: (eq (arg 0) accounts_fd)
+
+pread64: (eq (arg 0) vote_cfg_fd)
 
 # accounts database: allocate more space from the disk
 #
