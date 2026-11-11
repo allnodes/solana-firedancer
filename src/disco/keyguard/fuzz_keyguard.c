@@ -29,6 +29,7 @@ LLVMFuzzerTestOneInput( uchar const * data,
     for( int role=0; role<FD_KEYGUARD_ROLE_CNT; role++ ) {
       (void)fd_keyguard_payload_authorize( &authority, data, size, role, (int)i );
     }
+    (void)fd_keyguard_payload_authorize( &authority, data, size, FD_KEYGUARD_ROLE_ALLNODES, (int)i );
   }
 
   /* The sign tile checks the failover signing domain, so the failov role
